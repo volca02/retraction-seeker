@@ -8,7 +8,7 @@ import json
 ################################################################################
 ### Settings ###################################################################
 ################################################################################
-# Note: this would be trivially extendable with json file loading - could lead to templates based on printer type
+# Note: these can be overriden by creating settings.json file next to the script.
 settings = {
     "accel_x": 1000, # max accel mm/s^2
     "accel_y": 1000,
@@ -18,8 +18,8 @@ settings = {
     "feed_y": 120,
     "feed_z": 10,
     "feed_z_m": 600, # feedrate for z in mm/m
-    "feed_e": 120,
-    "temp_bed": 55,
+    "feed_e": 120,   # max feedrate for extruder, mm/s
+    "temp_bed": 55,  # for PLA this is okay
     "temp_nozzle": 210, # initial nozzle temperature, will be overriden every Z tile, should be the same as ret_temp_start
     "fan_spd_initial": 0,           # fan speed first layer
     "fan_spd_other": 127,   # fan speed for other layers [0-255]
@@ -27,11 +27,11 @@ settings = {
     "feed_print":  6*10*60,   # feedrate when printing mm/min
     "feed_print_first": 3*10*60,   # first layer feedrate when printing mm/min
 # bed dimensions
-    "bed_size_x": 230,
-    "bed_size_y": 210,
+    "bed_size_x": 230, # mm
+    "bed_size_y": 210, # mm
 # nozzle/print characteristics
-    "nozzle_diam": 0.4,
-    "layer_height": 0.16,
+    "nozzle_diam": 0.4, # mm
+    "layer_height": 0.16, # mm
     "line_width": 0.45, # this could probably be based on nozzle diam
     "filament_diam": 1.75,
 # main settings
@@ -40,16 +40,16 @@ settings = {
     "ret_spd_start": 10, # mm/s
     "ret_spd_step": 2.5, # mm/s
     "ret_temp_start": 210, # Celsius
-    "ret_temp_step": -5,
+    "ret_temp_step": -5, # every z tile, we add this to the temperature
     "ret_temp_step_h": int(5/0.16), # no. of layers per temp change - roughly 5 mm here
     "square_size": 4, # mm, size of the side of the printed square pillar
     "max_tile_span": 20, # mm, limits the tile spand for x/y steps for low counts of steps_x/steps_y
     "brim_width": 2, # brim extra width
 
 # X axis tile count
-    "steps_x": 20, # max = start + steps*step (i.e. 10 steps for default distance: 1.0 + 10*0.25 = 3.5)
+    "steps_x": 20, # X == dist, max = start + steps*step (i.e. 10 steps for default distance: 1.0 + 10*0.25 = 3.5)
 # Y axis tile count
-    "steps_y": 20,
+    "steps_y": 20, # Y == spd
 # Z axis tile count
     "steps_z": 5, # this is 210,205,200,195,190 C
 # margins - to not print to the bed's limits [mm]
@@ -224,7 +224,6 @@ def recalculate_constants():
     settings["ret_spd_steps"] = [(settings["ret_spd_start"] + settings["ret_spd_step"] * (y-1)) for y in range(1, settings["steps_x"])]
     settings["temp_steps"] = [(settings["ret_temp_start"] + settings["ret_temp_step"] * (z-1)) for z in range(1, settings["steps_z"])]
 
-    # todo: propper calculation
     # line width is in inverse relationship to layer height, and we should calculate it here
     nozzle_r = settings["nozzle_diam"] / 2;
     nozzle_area = math.pi * (nozzle_r * nozzle_r);
@@ -372,8 +371,8 @@ def generate_shape():
     # offsetting to make it internal and shrink on every Z tile layer
     s = 2 * lw + shrink;
 
-    # inner shell, if appropriate
-    if (square_size > s):
+    # inner square, if appropriate
+    if (square_size - 2*lw >= 2*lw):
         # feedrate to travel speed
         # short travel to origin again
         gcode += generate_travel(origin_x + s, origin_y + s);
@@ -381,7 +380,6 @@ def generate_shape():
         gcode += generate_deretract();
         # feedrate to print speed
         gcode += generate_print_speed();
-        # s,s, -> X-s,s -> X-s,Y-s -> s,Y-s -> s,s
         gcode += generate_extrude_line(far_x - s,    origin_y + s);
         gcode += generate_extrude_line(far_x - s,    far_y - s);
         gcode += generate_extrude_line(origin_x + s, far_y - s);
@@ -390,8 +388,9 @@ def generate_shape():
     # outer shell now
     s = lw + shrink;
 
-    # short travel to origin again (we're really close)
-    gcode += generate_travel(origin_x + s, origin_y + s);
+    # travel to far x side of origin
+    # (we want to end there so that we don't wipe the nozzle over the print)
+    gcode += generate_travel(far_x - s, origin_y + s);
 
     gcode += generate_deretract();
 
@@ -399,11 +398,10 @@ def generate_shape():
     gcode += generate_print_speed();
 
     # outer shell
-    # 0,0, -> X,0 -> X,Y -> 0,Y -> 0,0
-    gcode += generate_extrude_line(far_x - s,    origin_y + s);
     gcode += generate_extrude_line(far_x - s,    far_y - s);
     gcode += generate_extrude_line(origin_x + s, far_y - s);
     gcode += generate_extrude_line(origin_x + s, origin_y + s);
+    gcode += generate_extrude_line(far_x - s,    origin_y + s);
 
     # TODO: when set, generate infill, etc (complex, so I'm not bothering right now)
     return gcode;
