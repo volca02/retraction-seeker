@@ -147,8 +147,10 @@ tile_prologue = Template("""; tile x=$tile_x y=$tile_y z=$tile_z
 ; nozzle_temp  = $temp_nozzle
 """);
 
-retract_template = Template("""G1 E$ret_d F$ret_feed ; retract""");
-deretract_template = Template("""G1 E$last_ret_d F$ret_feed ; deretract""");
+retract_template = Template("""G1 E$ret_d F$ret_feed ; retract
+""");
+deretract_template = Template("""G1 E$last_ret_d F$ret_feed ; deretract
+""");
 travel_template = Template("""G1 X$travel_x Y$travel_y F$feed_travel ; travel
 """);
 
@@ -251,11 +253,21 @@ def recalculate_constants():
 ################################################################################
 
 def generate_retract():
-    settings["last_ret_d"] = -settings["ret_d"];
+    # add the retracted distance in case we retract twice in row
+    if "last_ret_d" in settings:
+        settings["last_ret_d"] -= settings["ret_d"];
+    else:
+        settings["last_ret_d"] = -settings["ret_d"];
     return retract_template.substitute(settings);
 
 def generate_deretract():
-    return deretract_template.substitute(settings);
+    if (settings["last_ret_d"] != 0):
+        gcode = deretract_template.substitute(settings);
+        settings["last_ret_d"] = 0;
+        return gcode;
+    else:
+        return "";
+
 
 # generates extruding line from initial to given coordinates
 def generate_extrude_line(x, y):
@@ -312,8 +324,12 @@ def generate_brim():
     print("; lw = %f" % lw);
     print("; span = %f" % (x2-x1));
     print("; lines = %d" % lines);
+
     # zigzag extrude from
     gcode = generate_travel(x1,y1);
+
+    # de-retract
+    gcode += generate_deretract();
 
     for l in range(0, lines):
         x = x1 + l * lw * 2;
@@ -361,6 +377,8 @@ def generate_shape():
         gcode += generate_travel_speed();
         # short travel to origin again
         gcode += generate_travel(origin_x + s, origin_y + s);
+        # de-retract
+        gcode += generate_deretract();
         # feedrate to print speed
         gcode += generate_print_speed();
         # s,s, -> X-s,s -> X-s,Y-s -> s,Y-s -> s,s
@@ -377,6 +395,8 @@ def generate_shape():
 
     # short travel to origin again (we're really close)
     gcode += generate_travel(origin_x + s, origin_y + s);
+
+    gcode += generate_deretract();
 
     # feedrate to print speed
     gcode += generate_print_speed();
@@ -462,11 +482,9 @@ for z_tile in range(0, settings["steps_z"]):
                 recalculate_tile_settings(x_tile,y_tile,z_tile);
                 # travel to origin
                 print(generate_travel_to_origin())
-                # de-retract
-                print(generate_deretract())
                 # intro G-code for the tile
                 print(tile_prologue.substitute(settings));
-                # generate the G-code for the tile
+                # generate the G-code for the tile - contains deretraction as appropriate
                 print(generate_shape())
                 # generate the retraction code
                 print(generate_retract())
