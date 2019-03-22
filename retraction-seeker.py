@@ -23,8 +23,9 @@ settings = {
     "temp_nozzle": 210, # initial nozzle temperature, will be overriden every Z tile, should be the same as ret_temp_start
     "fan_spd_initial": 0,           # fan speed first layer
     "fan_spd_other": 127,   # fan speed for other layers [0-255]
-    "feed_travel": 8*10*60,  # feedrate when traveling mm/min = 8cm*10*60 min
-    "feed_print": 5*10*60,   # feedrate when printing mm/min
+    "feed_travel": 10*10*60,  # feedrate when traveling mm/min = 8cm*10*60 min
+    "feed_print":  6*10*60,   # feedrate when printing mm/min
+    "feed_print_first": 3*10*60,   # first layer feedrate when printing mm/min
 # bed dimensions
     "bed_size_x": 230,
     "bed_size_y": 210,
@@ -300,11 +301,11 @@ def generate_travel(x, y):
     settings["pos_y"] = y;
     return travel
 
-def generate_travel_speed():
-    return "M204 S%3f\n" % settings["feed_travel"];
-
 def generate_print_speed():
     return "M204 S%3f\n" % settings["feed_print"];
+
+def generate_print_speed_fl():
+    return "M204 S%3f\n" % settings["feed_print_first"];
 
 
 def generate_brim():
@@ -321,15 +322,15 @@ def generate_brim():
 
     # we generate 2 vertical lines per iteration
     lines = int((x2 - x1) / (2*lw));
-    print("; lw = %f" % lw);
-    print("; span = %f" % (x2-x1));
-    print("; lines = %d" % lines);
 
     # zigzag extrude from
     gcode = generate_travel(x1,y1);
 
     # de-retract
     gcode += generate_deretract();
+
+    # feedrate to print speed
+    gcode += generate_print_speed_fl();
 
     for l in range(0, lines):
         x = x1 + l * lw * 2;
@@ -374,7 +375,6 @@ def generate_shape():
     # inner shell, if appropriate
     if (square_size > s):
         # feedrate to travel speed
-        gcode += generate_travel_speed();
         # short travel to origin again
         gcode += generate_travel(origin_x + s, origin_y + s);
         # de-retract
@@ -389,9 +389,6 @@ def generate_shape():
 
     # outer shell now
     s = lw + shrink;
-
-    # feedrate to travel speed
-    gcode += generate_travel_speed();
 
     # short travel to origin again (we're really close)
     gcode += generate_travel(origin_x + s, origin_y + s);
@@ -410,10 +407,6 @@ def generate_shape():
 
     # TODO: when set, generate infill, etc (complex, so I'm not bothering right now)
     return gcode;
-
-def generate_travel_to_origin():
-    return generate_travel(settings["tile_origin_x"], settings["tile_origin_y"]);
-
 
 ################################################################################
 ### Utilities ##################################################################
@@ -480,8 +473,6 @@ for z_tile in range(0, settings["steps_z"]):
             for x_tile in range(0, settings["steps_x"]):
                 # origin for the current tile is recalculated
                 recalculate_tile_settings(x_tile,y_tile,z_tile);
-                # travel to origin
-                print(generate_travel_to_origin())
                 # intro G-code for the tile
                 print(tile_prologue.substitute(settings));
                 # generate the G-code for the tile - contains deretraction as appropriate
