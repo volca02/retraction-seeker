@@ -148,7 +148,7 @@ tile_prologue = Template("""; tile x=$tile_x y=$tile_y z=$tile_z
 """);
 
 retract_template = Template("""G1 E$ret_d F$ret_feed ; retract""");
-deretract_template = Template("""G1 E$deret_d F$ret_feed ; deretract""");
+deretract_template = Template("""G1 E$last_ret_d F$ret_feed ; deretract""");
 travel_template = Template("""G1 X$travel_x Y$travel_y F$feed_travel ; travel
 """);
 
@@ -251,6 +251,7 @@ def recalculate_constants():
 ################################################################################
 
 def generate_retract():
+    settings["last_ret_d"] = -settings["ret_d"];
     return retract_template.substitute(settings);
 
 def generate_deretract():
