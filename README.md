@@ -8,7 +8,7 @@ This project is WIP attempt at gcode generator that produces array of towers wit
 
 The generated values for each of the axis are listed in the g-code and should be used as a key when observing the platter (ret_d_steps, ret_spd_steps, temp_steps).
 
-All parameters of the generated g-code can be influneced (for now by modifying the settings dict in the source code, but config parser is planned if this project gets used more often).
+All parameters of the generated g-code can be influneced by editing a settings.json file placed next to the script (see settings.json.example as an example).
 
 Default parameters are set to similar values that prusa i3 mk3 would expect.
 
