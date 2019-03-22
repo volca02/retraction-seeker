@@ -43,6 +43,8 @@ settings = {
     "ret_temp_step_h": int(5/0.16), # no. of layers per temp change - roughly 5 mm here
     "square_size": 4, # mm, size of the side of the printed square pillar
     "max_tile_span": 20, # mm, limits the tile spand for x/y steps for low counts of steps_x/steps_y
+    "brim_width": 2, # brim extra width
+
 # X axis tile count
     "steps_x": 20, # max = start + steps*step (i.e. 10 steps for default distance: 1.0 + 10*0.25 = 3.5)
 # Y axis tile count
@@ -291,12 +293,44 @@ def generate_travel_speed():
 def generate_print_speed():
     return "M204 S%3f\n" % settings["feed_print"];
 
-# we expect to have pos_x and pos_y in tile_origin_x, tile_origin_y!
+
+def generate_brim():
+    origin_x = settings["tile_origin_x"];
+    origin_y = settings["tile_origin_y"];
+    pad_w    = settings["brim_width"];
+    square_size = settings["square_size"];
+    lw = settings["line_width"];
+
+    x1 = origin_x - pad_w;
+    y1 = origin_y - pad_w;
+    x2 = origin_x + square_size + pad_w;
+    y2 = origin_y + square_size + pad_w;
+
+    # we generate 2 vertical lines per iteration
+    lines = int((x2 - x1) / (2*lw));
+    print("; lw = %f" % lw);
+    print("; span = %f" % (x2-x1));
+    print("; lines = %d" % lines);
+    # zigzag extrude from
+    gcode = generate_travel(x1,y1);
+
+    for l in range(0, lines):
+        x = x1 + l * lw * 2;
+        gcode += generate_extrude_line(x,y2);
+        gcode += generate_extrude_line(x + lw, y2);
+        gcode += generate_extrude_line(x + lw, y1);
+        if (l + 1 < lines):
+            gcode += generate_extrude_line(x + 2*lw, y1);
+
+    return gcode
+
 def generate_shape():
     origin_x = settings["tile_origin_x"];
     origin_y = settings["tile_origin_y"];
 
-    # TODO: first layer should contain adhesion pads instead
+    # first layer contains brim
+    if settings["layer"] == 0:
+        return generate_brim();
 
     # first positioning, then the rest is moving extruder too
     gcode = "";
