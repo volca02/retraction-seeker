@@ -41,7 +41,7 @@ settings = {
     "ret_temp_start": 210, # Celsius
     "ret_temp_step": -5,
     "ret_temp_step_h": int(5/0.16), # no. of layers per temp change - roughly 5 mm here
-    "square_size": 2, # mm, size of the side of the printed square pillar
+    "square_size": 4, # mm, size of the side of the printed square pillar
     "max_tile_span": 20, # mm, limits the tile spand for x/y steps for low counts of steps_x/steps_y
 # X axis tile count
     "steps_x": 20, # max = start + steps*step (i.e. 10 steps for default distance: 1.0 + 10*0.25 = 3.5)
@@ -131,7 +131,7 @@ M104 $temp_nozzle ; nozzle temp
 z_layer_prologue = Template("""
 ;AFTER_LAYER_CHANGE
 ;$coord_z
-M106 $fan_spd ; fan speed
+$fan_spd_cmd ; fan speed (or fan off)
 G1 Z$coord_z F$feed_z_m ; change the z-coord
 """);
 
@@ -147,7 +147,7 @@ tile_prologue = Template("""; tile x=$tile_x y=$tile_y z=$tile_z
 
 retract_template = Template("""G1 E$ret_d F$ret_feed ; retract""");
 deretract_template = Template("""G1 E$deret_d F$ret_feed ; deretract""");
-travel_template = Template("""G X$travel_x Y$travel_y F$feed_travel ; travel
+travel_template = Template("""G1 X$travel_x Y$travel_y F$feed_travel ; travel
 """);
 
 ################################################################################
@@ -164,9 +164,16 @@ def recalculate_layer(layer):
     settings["layer"]   = layer;
     settings["coord_z"] = settings["layer_height"] * (layer + 1);
     if (layer == 0):
-        settings["fan_spd"] = settings["fan_spd_initial"];
+        fan_spd = settings["fan_spd_initial"];
     else:
-        settings["fan_spd"] = settings["fan_spd_other"];
+        fan_spd = settings["fan_spd_other"];
+
+    if fan_spd == 0:
+        settings["fan_spd_cmd"] = "M107";
+    else:
+        settings["fan_spd_cmd"] = "M106 S%d" % fan_spd;
+
+    settings["fan_spd"] = fan_spd;
 
 # given tile coordinates, recalculate origin of the tile (coord_x, coord_y) and retraction settings
 def recalculate_tile_settings(x,y,z):
@@ -183,7 +190,7 @@ def recalculate_tile_settings(x,y,z):
 
     # calculate the origin of the tile
     settings["tile_origin_x"] = settings["tile_x_start"] + x * settings["tile_x_step"];
-    settings["tile_origin_y"] = settings["tile_y_start"] + x * settings["tile_y_step"];
+    settings["tile_origin_y"] = settings["tile_y_start"] + y * settings["tile_y_step"];
 
 # recalculates bed tile positioning, extrusion multiplier, etc
 def recalculate_constants():
@@ -308,41 +315,43 @@ def generate_shape():
     far_y = origin_y + square_size;
 
     # line width
-    # this is probably totally wrong, whatever :D
     lw = settings["line_width"];
+
+    # offsetting to make it internal and shrink on every Z tile layer
     s = 2 * lw + shrink;
-
-    # short travel to origin again
-    gcode += generate_travel(origin_x, origin_y);
-
-    # feedrate to print speed
-    gcode += generate_print_speed();
 
     # inner shell, if appropriate
     if (square_size > s):
+        # feedrate to travel speed
+        gcode += generate_travel_speed();
+        # short travel to origin again
+        gcode += generate_travel(origin_x + s, origin_y + s);
+        # feedrate to print speed
+        gcode += generate_print_speed();
         # s,s, -> X-s,s -> X-s,Y-s -> s,Y-s -> s,s
         gcode += generate_extrude_line(far_x - s,    origin_y + s);
         gcode += generate_extrude_line(far_x - s,    far_y - s);
         gcode += generate_extrude_line(origin_x + s, far_y - s);
         gcode += generate_extrude_line(origin_x + s, origin_y + s);
 
+    # outer shell now
+    s = lw + shrink;
+
     # feedrate to travel speed
     gcode += generate_travel_speed();
 
     # short travel to origin again (we're really close)
-    gcode += generate_travel(origin_x, origin_y);
+    gcode += generate_travel(origin_x + s, origin_y + s);
 
     # feedrate to print speed
     gcode += generate_print_speed();
-
-    s = lw + shrink;
 
     # outer shell
     # 0,0, -> X,0 -> X,Y -> 0,Y -> 0,0
     gcode += generate_extrude_line(far_x - s,    origin_y + s);
     gcode += generate_extrude_line(far_x - s,    far_y - s);
-    gcode += generate_extrude_line(origin_x + s, far_y + s);
-    gcode += generate_extrude_line(origin_x + s, origin_y - s);
+    gcode += generate_extrude_line(origin_x + s, far_y - s);
+    gcode += generate_extrude_line(origin_x + s, origin_y + s);
 
     # TODO: when set, generate infill, etc (complex, so I'm not bothering right now)
     return gcode;
