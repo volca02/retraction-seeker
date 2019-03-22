@@ -2,9 +2,9 @@
 
 This project is WIP attempt at gcode generator that produces array of towers with various retraction settings between them.
 
-X axis changes retraction distance (by default 1.0 - 5.5 mm in 0.25 mm steps)
-Y axis changes retraction speed (by default 10.0 - 55.0 mm/s in 2.5 mm/s steps)
-Z axis changes temperature (by default 210 to 190 in 5C steps)
+* X axis changes retraction distance (by default 1.0 - 5.5 mm in 0.25 mm steps)
+* Y axis changes retraction speed (by default 10.0 - 55.0 mm/s in 2.5 mm/s steps)
+* Z axis changes temperature (by default 210 to 190 in 5C steps)
 
 The generated values for each of the axis are listed in the g-code and should be used as a key when observing the platter.
 
