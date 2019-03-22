@@ -1,4 +1,6 @@
 #!/usr/bin/python3
+from __future__ import print_function
+import sys
 from string import Template
 import math
 
@@ -34,11 +36,12 @@ settings = {
     "ret_d_start": 1.0, # mm
     "ret_d_step": 0.25, # mm
     "ret_spd_start": 10, # mm/s
-    "ret_spd_step": 0.5, # mm/s
+    "ret_spd_step": 2.5, # mm/s
     "ret_temp_start": 210, # Celsius
     "ret_temp_step": -5,
     "ret_temp_step_h": int(5/0.16), # no. of layers per temp change - roughly 5 mm here
     "square_size": 2, # mm, size of the side of the printed square pillar
+    "max_tile_span": 20, # mm, limits the tile spand for x/y steps for low counts of steps_x/steps_y
 # X axis tile count
     "steps_x": 20, # max = start + steps*step (i.e. 10 steps for default distance: 1.0 + 10*0.25 = 3.5)
 # Y axis tile count
@@ -192,8 +195,14 @@ def recalculate_constants():
     span_y = settings["bed_size_y"] - 2 * margin_y;
 
     # step is span / steps
-    settings["tile_x_step"] = span_x / settings["steps_x"];
-    settings["tile_y_step"] = span_y / settings["steps_y"];
+    tile_x_step = span_x / settings["steps_x"];
+    tile_y_step = span_y / settings["steps_y"];
+
+    tile_x_step = min(tile_x_step, settings["max_tile_span"]);
+    tile_y_step = min(tile_y_step, settings["max_tile_span"]);
+
+    settings["tile_x_step"] = tile_x_step;
+    settings["tile_y_step"] = tile_y_step;
 
     # insert tuple of all ret_d and ret_spd and temp_nozzle
     settings["ret_d_steps"] = [(settings["ret_d_start"] + settings["ret_d_step"] * (x-1)) for x in range(1, settings["steps_x"])]
@@ -340,20 +349,27 @@ def generate_travel_to_origin():
 
 
 ################################################################################
+### Utilities ##################################################################
+################################################################################
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
+
+################################################################################
 ### Main code ##################################################################
 ################################################################################
 # TODO: here is the place to process command line and stuff like that
 
-# G1 X123.843 Y117.235 E0.02970
-# G1 X122.697 Y117.072 E0.02970
-#
-xd = 123.843-122.697;
-yd = 117.235-117.072;
-print(0.02970/math.sqrt(xd*xd+yd*yd));
-
-
 # this calculates helper constants so that we know where to place the pillars
 recalculate_constants();
+
+# sanity check
+if (settings["square_size"] >= settings["tile_x_step"]):
+    eprint("square_size is larger than x step width (tile width)")
+    exit
+
+if (settings["square_size"] >= settings["tile_y_step"]):
+    eprint("square_size is larger than y step width (tile depth)")
+    exit
 
 # after all the related constants were calculated, we generate the string containing all settings
 # insert a text representation of the settings into the settings as well as a commented multiline string...
