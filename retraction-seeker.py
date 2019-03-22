@@ -276,11 +276,11 @@ def generate_travel(x, y):
     return travel
 
 def generate_travel_speed():
-    return "M204 S%3f" % settings["feed_travel"];
-
+el_speed():
+    return "M204 S%3f\n" % settings["fee
 def generate_print_speed():
-    return "M204 S%3f" % settings["feed_print"];
-
+nt_speed():
+    return "M204 S%3f\n" % settings["fe
 # we expect to have pos_x and pos_y in tile_origin_x, tile_origin_y!
 def generate_shape():
     origin_x = settings["tile_origin_x"];
