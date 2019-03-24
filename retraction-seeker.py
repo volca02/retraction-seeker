@@ -24,15 +24,16 @@ settings = {
     "fan_spd_initial": 0,           # fan speed first layer
     "fan_spd_other": 127,   # fan speed for other layers [0-255]
     "feed_travel": 10*10*60,  # feedrate when traveling mm/min = 8cm*10*60 min
-    "feed_print":  6*10*60,   # feedrate when printing mm/min
-    "feed_print_first": 3*10*60,   # first layer feedrate when printing mm/min
+    "feed_print":  6*10*60,        # feedrate when printing mm/min
+    "feed_print_outer":  4*10*60,  # feedrate when printing outer wall mm/min
+    "feed_print_first": 3*10*60,   # feedrate when printing first layer mm/min
 # bed dimensions
     "bed_size_x": 230, # mm
     "bed_size_y": 210, # mm
 # nozzle/print characteristics
     "nozzle_diam": 0.4, # mm
     "layer_height": 0.16, # mm
-    "line_width": 0.45, # this could probably be based on nozzle diam
+    "width_multiplier": 1.2, # line_width = nozzle_diam * extrusion_multiplier
     "filament_diam": 1.75,
 # main settings
     "ret_d_start": 1.0, # mm
@@ -148,6 +149,7 @@ tile_prologue = Template("""; tile x=$tile_x y=$tile_y z=$tile_z
 ; nozzle_temp  = $temp_nozzle
 """);
 
+# retraction/derectraction templates. Could be modified to include z-hop
 retract_template = Template("""G1 E$ret_d F$ret_feed ; retract
 """);
 deretract_template = Template("""G1 E$last_ret_d F$ret_feed ; deretract
@@ -231,6 +233,8 @@ def recalculate_constants():
 
     layer_height = settings["layer_height"];
 
+    settings["line_width"] = settings["nozzle_diam"] * settings["width_multiplier"]
+
     # extrusion multiplier here is how fast we move e per mm of x/y movement
     # in case the travel speed corresponds to extrusion speed, the area cut of the extruded line will be the same
     #
@@ -253,24 +257,30 @@ def recalculate_constants():
 ################################################################################
 
 def generate_retract():
-    # add the retracted distance in case we retract twice in row
-    if "last_ret_d" in settings:
-        settings["last_ret_d"] -= settings["ret_d"];
-    else:
+    # refuse to retract in case we're already retracted
+    current_ret = settings.get("last_ret_d", 0);
+
+    gcode = "";
+
+    if current_ret == 0:
+        gcode = retract_template.substitute(settings)
         settings["last_ret_d"] = -settings["ret_d"];
-    return retract_template.substitute(settings);
+
+    return gcode;
 
 def generate_deretract():
-    if (settings["last_ret_d"] != 0):
+    current_ret = settings.get("last_ret_d", 0);
+
+    gcode = "";
+
+    if (current_ret != 0):
         gcode = deretract_template.substitute(settings);
         settings["last_ret_d"] = 0;
-        return gcode;
-    else:
-        return "";
 
+    return gcode;
 
 # generates extruding line from initial to given coordinates
-def generate_extrude_line(x, y):
+def generate_extrude_line(x, y, feed):
     px = settings["pos_x"];
     py = settings["pos_y"];
 
@@ -290,7 +300,7 @@ def generate_extrude_line(x, y):
     settings["pos_x"] = x;
     settings["pos_y"] = y;
 
-    return "G1 X%3.6f Y%3.6f E%3.6f\n" % (x,y,e);
+    return "G1 X%3.6f Y%3.6f E%3.6f F%3.6f\n" % (x,y,e,feed);
 
 def generate_travel(x, y):
     settings["travel_x"] = x;
@@ -300,17 +310,11 @@ def generate_travel(x, y):
     settings["pos_y"] = y;
     return travel
 
-def generate_print_speed():
-    return "M204 S%3f\n" % settings["feed_print"];
-
-def generate_print_speed_fl():
-    return "M204 S%3f\n" % settings["feed_print_first"];
-
-
 def generate_brim():
     origin_x = settings["tile_origin_x"];
     origin_y = settings["tile_origin_y"];
     pad_w    = settings["brim_width"];
+    feed     = settings["feed_print_first"];
     square_size = settings["square_size"];
     lw = settings["line_width"];
 
@@ -328,22 +332,21 @@ def generate_brim():
     # de-retract
     gcode += generate_deretract();
 
-    # feedrate to print speed
-    gcode += generate_print_speed_fl();
-
     for l in range(0, lines):
         x = x1 + l * lw * 2;
-        gcode += generate_extrude_line(x,y2);
-        gcode += generate_extrude_line(x + lw, y2);
-        gcode += generate_extrude_line(x + lw, y1);
+        gcode += generate_extrude_line(x,y2,feed);
+        gcode += generate_extrude_line(x + lw, y2,feed);
+        gcode += generate_extrude_line(x + lw, y1,feed);
         if (l + 1 < lines):
-            gcode += generate_extrude_line(x + 2*lw, y1);
+            gcode += generate_extrude_line(x + 2*lw, y1,feed);
 
     return gcode
 
 def generate_shape():
     origin_x = settings["tile_origin_x"];
     origin_y = settings["tile_origin_y"];
+    feed     = settings["feed_print"];
+    feed_o   = settings["feed_print_outer"];
 
     # first layer contains brim
     if settings["layer"] == 0:
@@ -368,6 +371,7 @@ def generate_shape():
     # line width
     lw = settings["line_width"];
 
+    # TODO: allow overlap between the inner and outer perimeters
     # offsetting to make it internal and shrink on every Z tile layer
     s = 2 * lw + shrink;
 
@@ -379,11 +383,12 @@ def generate_shape():
         # de-retract
         gcode += generate_deretract();
         # feedrate to print speed
-        gcode += generate_print_speed();
-        gcode += generate_extrude_line(far_x - s,    origin_y + s);
-        gcode += generate_extrude_line(far_x - s,    far_y - s);
-        gcode += generate_extrude_line(origin_x + s, far_y - s);
-        gcode += generate_extrude_line(origin_x + s, origin_y + s);
+        gcode += generate_extrude_line(far_x - s,    origin_y + s, feed);
+        gcode += generate_extrude_line(far_x - s,    far_y - s, feed);
+        gcode += generate_extrude_line(origin_x + s, far_y - s, feed);
+        gcode += generate_extrude_line(origin_x + s, origin_y + s, feed);
+
+    # TODO: when set, generate infill, etc (complex, so I'm not bothering right now)
 
     # outer shell now
     s = lw + shrink;
@@ -394,16 +399,15 @@ def generate_shape():
 
     gcode += generate_deretract();
 
-    # feedrate to print speed
-    gcode += generate_print_speed();
-
     # outer shell
-    gcode += generate_extrude_line(far_x - s,    far_y - s);
-    gcode += generate_extrude_line(origin_x + s, far_y - s);
-    gcode += generate_extrude_line(origin_x + s, origin_y + s);
-    gcode += generate_extrude_line(far_x - s,    origin_y + s);
+    gcode += generate_extrude_line(far_x - s,    far_y - s, feed_o);
+    gcode += generate_extrude_line(origin_x + s, far_y - s, feed_o);
+    gcode += generate_extrude_line(origin_x + s, origin_y + s, feed_o);
 
-    # TODO: when set, generate infill, etc (complex, so I'm not bothering right now)
+    # note: coasting would be implemented by splitting this line
+    # to extrude and travel
+    gcode += generate_extrude_line(far_x - s,    origin_y + s, feed_o);
+    # note: wipe would be implemented by doing travel in direction of origin_x + s, origin_y + s, with distance being governed by wipe distance
     return gcode;
 
 ################################################################################
@@ -412,29 +416,40 @@ def generate_shape():
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
+def load_overrides(filename):
+    try:
+        foverrides = open(filename);
+        settings.update(json.load(foverrides));
+    except FileNotFoundError:
+        # not a problem
+        print("; NOTE: no %s config file found" % filename);
+        pass
+
+def sanity_check():
+    square_size = settings["square_size"]
+    # we have to add 2*brim size to this (brim is on both sides of the tile)
+    tile_dim = square_size + 2 * settings["brim_width"]
+
+    if (tile_dim >= settings["tile_x_step"]):
+        eprint("square_size is larger than x step width (tile width)")
+        exit
+
+    if (tile_dim >= settings["tile_y_step"]):
+        eprint("square_size is larger than y step width (tile depth)")
+        exit
+
 ################################################################################
 ### Main code ##################################################################
 ################################################################################
-# override settings by reading settings.json
-try:
-    foverrides = open("settings.json");
-    settings.update(json.load(foverrides));
-except FileNotFoundError:
-    # not a problem
-    print("; NOTE: no settings.json found, using defaults");
-    pass
+# override settings by reading machine.json followed by settings.json
+load_overrides("machine.json");
+load_overrides("settings.json");
 
 # this calculates helper constants so that we know where to place the pillars
 recalculate_constants();
 
 # sanity check
-if (settings["square_size"] >= settings["tile_x_step"]):
-    eprint("square_size is larger than x step width (tile width)")
-    exit
-
-if (settings["square_size"] >= settings["tile_y_step"]):
-    eprint("square_size is larger than y step width (tile depth)")
-    exit
+sanity_check();
 
 # after all the related constants were calculated, we generate the string containing all settings
 # insert a text representation of the settings into the settings as well as a commented multiline string...
