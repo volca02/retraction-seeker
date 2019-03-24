@@ -223,6 +223,10 @@ def recalculate_constants():
     settings["ret_spd_steps"] = [(settings["ret_spd_start"] + settings["ret_spd_step"] * (y-1)) for y in range(1, settings["steps_x"])]
     settings["temp_steps"] = [(settings["ret_temp_start"] + settings["ret_temp_step"] * (z-1)) for z in range(1, settings["steps_z"])]
 
+    # first layer retract
+    settings["ret_d"] = settings["ret_d_start"]
+    settings["last_ret_d"] = 0 # to be sure we know we're not retracted
+
     # line width is in inverse relationship to layer height, and we should calculate it here
     nozzle_r = settings["nozzle_diam"] / 2;
     nozzle_area = math.pi * (nozzle_r * nozzle_r);
@@ -257,9 +261,10 @@ def generate_retract():
     # refuse to retract in case we're already retracted
     current_ret = settings.get("last_ret_d", 0);
     ret_d       = settings["ret_d"];
-    gcode = "";
 
-    if current_ret == 0 and ret_d > 0:
+    gcode = ""
+
+    if (current_ret == 0) and (abs(ret_d) > 0.001):
         gcode = retract_template.substitute(settings)
         settings["last_ret_d"] = -ret_d;
 
