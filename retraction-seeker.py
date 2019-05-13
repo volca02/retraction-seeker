@@ -150,7 +150,7 @@ M84 ; disable motors
 z_tile_prologue = Template("""; -----------------
 ; Z tile layer $z_tile
 ; nozzle_temp = $temp_nozzle
-M104 $temp_nozzle ; nozzle temp
+M104 S$temp_nozzle ; nozzle temp
 """);
 
 # this is a fairly standard layer prologue
